@@ -50,7 +50,7 @@ jobs:
 
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/ec2_key "ec2-user@$EC2_HOST" \
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -vvv -i ~/.ssh/ec2_key "ec2-user@$EC2_HOST" \
             "AWS_REGION='$AWS_REGION' REGISTRY='$REGISTRY' IMAGE_URI='$IMAGE_URI' bash -s" <<'REMOTE'
           set -e
 
