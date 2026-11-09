@@ -3,7 +3,8 @@ Description: Simple EC2 Docker host and ECR repository for a static website demo
 
 Parameters:
   KeyName:
-    Type: AWS::EC2::KeyPair::AdamsKey
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: AdamsKey
     Description: Existing EC2 key pair used for SSH
 
   AllowedSshCidr:
