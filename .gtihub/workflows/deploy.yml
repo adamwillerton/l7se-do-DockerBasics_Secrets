@@ -1,0 +1,69 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: website-demo
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+
+          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/ec2_key "ec2-user@$EC2_HOST" \
+            "AWS_REGION='$AWS_REGION' REGISTRY='$REGISTRY' IMAGE_URI='$IMAGE_URI' bash -s" <<'REMOTE'
+          set -e
+
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "$REGISTRY"
+
+          docker pull "$IMAGE_URI"
+
+          docker rm -f website 2>/dev/null || true
+
+          docker run -d \
+            --name website \
+            --restart unless-stopped \
+            -p 80:80 \
+            "$IMAGE_URI"
+          REMOTE
